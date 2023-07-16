@@ -1,0 +1,10 @@
+{
+    "server": {
+        "port": 8000,
+        "timeout": 300000,
+        "bodyLimit": "10mb"
+    },
+    "logger": {
+        "level": "info"
+    }
+}
