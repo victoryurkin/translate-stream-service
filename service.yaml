@@ -1,0 +1,18 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: translate-stream-service
+spec:
+  template:
+    spec:
+      containers:
+        - image: us-east4-docker.pkg.dev/translate-voice-392913/services/translate-stream-service:1.0.4
+          ports:
+            - containerPort: 8000
+          env:
+            - name: NODE_ENV
+              value: prod
+            - name: LOG_LEVEL
+              value: info
+        
+        

@@ -1,10 +1,12 @@
 {
     "server": {
         "port": 8000,
-        "timeout": 300000,
-        "bodyLimit": "10mb"
+        "timeout": 300000
     },
     "logger": {
         "level": "info"
+    },
+    "firebase": {
+        "projectId": "translate-voice-392913"
     }
 }

@@ -1,5 +1,5 @@
 import config from '@app/config';
-import app from '@app/app';
+import server from '@app/app';
 import { logger } from '@app/clients/logger';
 
 if (process.env.NODE_ENV === 'dev') {
@@ -19,7 +19,7 @@ process.on('uncaughtRejection', (err) => {
 logger.info(`Environment: ${process.env.NODE_ENV}`);
 
 // starting the server
-app
+server
   .listen(config.get('server.port'), () => {
     logger.info(`Listening on port ${config.get('server.port')}`);
   })
