@@ -42,7 +42,7 @@ io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
     const decodedToken = await getAuth().verifyIdToken(token);
     const uid = decodedToken.uid;
-    logger.info('Connected user: ', uid);
+    logger.info(`Connected user: ${uid}`);
     next();
   } catch (error) {
     next(new Error('UNAUTHORIZED'));
@@ -67,6 +67,7 @@ io.on('connection', (socket: Socket) => {
           encoding: 'LINEAR16',
           sampleRateHertz: 44100,
           languageCode: sourceLang,
+          enableAutomaticPunctuation: true,
         },
         interimResults: true,
       })
@@ -74,8 +75,15 @@ io.on('connection', (socket: Socket) => {
       .on('data', (data) => {
         socket.emit('transcriptionData', data);
       });
+
     socket.on('audioData', (data) => {
       recognizeStream.write(data);
+    });
+
+    socket.on('emptyTranscription', () => {
+      recognizeStream.end();
+      recognizeStream.removeAllListeners();
+      socket.disconnect(true);
     });
 
     // Stop recording
@@ -88,6 +96,7 @@ io.on('connection', (socket: Socket) => {
       const [translations] = await translateClient.translate(data.transcription, targetLang);
       const translationsArray = Array.isArray(translations) ? translations : [translations];
       const translation = translationsArray.join(' ');
+      socket.emit('translationData', translation);
 
       // Create audio
       const [response] = await textToSpeechClient.synthesizeSpeech({
