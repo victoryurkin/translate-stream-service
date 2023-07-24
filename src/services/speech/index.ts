@@ -7,9 +7,10 @@ export const recognizeStream = client
     config: {
       encoding: 'LINEAR16',
       sampleRateHertz: 44100,
+      audioChannelCount: 1,
       languageCode: 'en-US',
     },
-    interimResults: false, // If you want interim results, set this to true
+    interimResults: true, // If you want interim results, set this to true
   })
   .on('error', console.error)
   .on('data', (data) => {
