@@ -7,9 +7,33 @@ import config from '@app/config';
 import { logger } from '@app/clients/logger';
 import healthCheck from './healthcheck';
 
+// Authentication
+import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+
+// Google Clients
 import { SpeechClient } from '@google-cloud/speech';
 import { v2 } from '@google-cloud/translate';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
+
+initializeApp({
+  projectId: config.get('firebase.projectId'),
+});
+const app: Application = express();
+const server = createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+// Allow cross-origin support
+app.use(cors());
+
+app.get('/', (req, res) => {
+  res.json({
+    name: 'translate-stream-service',
+  });
+});
+
+// healthcheck endpoint
+healthCheck(app);
 
 const speechClient = new SpeechClient();
 const translateClient = new v2.Translate();
@@ -36,33 +60,11 @@ interface TranscriptionData {
           transcript: string;
         },
       ];
+      isFinal: boolean;
       languageCode: string;
     },
   ];
 }
-
-// Authentication
-import { initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-
-initializeApp({
-  projectId: config.get('firebase.projectId'),
-});
-const app: Application = express();
-const server = createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
-
-// Allow cross-origin support
-app.use(cors());
-
-app.get('/', (req, res) => {
-  res.json({
-    name: 'translate-stream-service',
-  });
-});
-
-// healthcheck endpoint
-healthCheck(app);
 
 io.use(async (socket, next) => {
   try {
@@ -77,76 +79,84 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket: Socket) => {
-  // let currentJob: Job | undefined;
-
-  let recognizeStream;
-  let transcription;
+  let recognizeStream: any = null;
+  let transcripts: string[] = [];
 
   socket.on(IncomingEvents.START_RECORDING, (data: unknown) => {
-    const languages = (data as { languages: string[] }).languages;
+    console.log('startRecording ', data);
+    const recordingData = data as { sourceLanguage: string; targetLanguage: string };
+    transcripts = [];
     recognizeStream = speechClient
       .streamingRecognize({
         config: {
           encoding: 'LINEAR16',
-          audioChannelCount: 1,
           sampleRateHertz: 44100,
-          languageCode: languages[0],
-          alternativeLanguageCodes: languages,
+          languageCode: recordingData.sourceLanguage,
           enableAutomaticPunctuation: true,
         },
         interimResults: true,
       })
-      .on('error', (error) => logger.error('Recognize Stream error: ', error))
-      .on('data', (data) => {
-        try {
-          const transcriptionData = data as TranscriptionData;
-          transcription = transcriptionData;
-          socket.emit(OutgoingEvents.TRANSCRIPTION_DATA, transcriptionData);
-        } catch (error) {
-          logger.error(`Error on transcription data received: ${JSON.stringify(error)}`);
+      .on('error', (error) => console.error('stream error: ', error))
+      .on('data', (data: TranscriptionData) => {
+        if (transcripts.length === 0) {
+          transcripts.push(data.results[0].alternatives[0].transcript);
+        } else {
+          transcripts[transcripts.length - 1] = data.results[0].alternatives[0].transcript;
         }
+        if (data.results[0].isFinal) {
+          transcripts.push('');
+        }
+        const transcript = transcripts.join(' ').trim();
+        socket.emit(OutgoingEvents.TRANSCRIPTION_DATA, transcript);
       })
       .on('finish', async () => {
-        const transcript = transcription?.results[0]?.alternatives[0]?.transcript;
-        if (transcript && transcript.trim() !== '') {
-          socket.emit(OutgoingEvents.TRANSCRIPTION_END, transcription);
+        recognizeStream.removeAllListeners();
+        const transcript = transcripts.join(' ').trim();
+        if (transcript !== '') {
+          socket.emit(OutgoingEvents.TRANSCRIPTION_END, transcript);
 
           // Translate recording
-          const translationLanguage =
-            transcription.results[0].languageCode === languages[0].toLowerCase()
-              ? languages[1]
-              : languages[0];
-          const [translations] = await translateClient.translate(transcript, translationLanguage);
+          const [translations] = await translateClient.translate(
+            transcript,
+            recordingData.targetLanguage,
+          );
           const translationsArray = Array.isArray(translations) ? translations : [translations];
           const translation = translationsArray.join(' ');
           socket.emit(OutgoingEvents.TRANSLATION_DATA, translation);
+
           // Create audio
           const [response] = await textToSpeechClient.synthesizeSpeech({
             input: { text: translation },
-            voice: { languageCode: translationLanguage },
+            voice: { languageCode: recordingData.targetLanguage },
             audioConfig: { audioEncoding: 'MP3' },
           });
           socket.emit(OutgoingEvents.AUDIO_FILE, response.audioContent);
-          transcription = undefined;
         }
       });
   });
 
   socket.on(IncomingEvents.AUDIO_DATA, (data) => {
-    recognizeStream.write(data);
+    if (recognizeStream) {
+      recognizeStream.write(data);
+    } else {
+      console.error('Audio data received, but recognizeStream was not initialized');
+    }
   });
 
   socket.on(IncomingEvents.STOP_RECORDING, () => {
-    setTimeout(() => {
-      recognizeStream.end();
-    }, 500);
+    if (recognizeStream) {
+      console.log('stopRecording');
+      setTimeout(() => {
+        recognizeStream.end();
+      }, 500);
+    } else {
+      console.error('Stopping recording, but recognizeStream was not initialized');
+    }
   });
 
   socket.on('disconnect', () => {
-    if (recognizeStream) {
-      recognizeStream.end();
-    }
-    logger.info('User disconnected');
+    console.log('User disconnected');
+    socket.removeAllListeners();
   });
 });
 
