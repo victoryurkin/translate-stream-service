@@ -90,7 +90,7 @@ io.on('connection', (socket: Socket) => {
       .streamingRecognize({
         config: {
           encoding: 'LINEAR16',
-          sampleRateHertz: 44100,
+          sampleRateHertz: 16000,
           languageCode: recordingData.sourceLanguage,
           enableAutomaticPunctuation: true,
         },
@@ -113,24 +113,28 @@ io.on('connection', (socket: Socket) => {
         recognizeStream.removeAllListeners();
         const transcript = transcripts.join(' ').trim();
         if (transcript !== '') {
-          socket.emit(OutgoingEvents.TRANSCRIPTION_END, transcript);
+          try {
+            socket.emit(OutgoingEvents.TRANSCRIPTION_END, transcript);
 
-          // Translate recording
-          const [translations] = await translateClient.translate(
-            transcript,
-            recordingData.targetLanguage,
-          );
-          const translationsArray = Array.isArray(translations) ? translations : [translations];
-          const translation = translationsArray.join(' ');
-          socket.emit(OutgoingEvents.TRANSLATION_DATA, translation);
+            // Translate recording
+            const [translations] = await translateClient.translate(
+              transcript,
+              recordingData.targetLanguage,
+            );
+            const translationsArray = Array.isArray(translations) ? translations : [translations];
+            const translation = translationsArray.join(' ');
+            socket.emit(OutgoingEvents.TRANSLATION_DATA, translation);
 
-          // Create audio
-          const [response] = await textToSpeechClient.synthesizeSpeech({
-            input: { text: translation },
-            voice: { languageCode: recordingData.targetLanguage },
-            audioConfig: { audioEncoding: 'MP3' },
-          });
-          socket.emit(OutgoingEvents.AUDIO_FILE, response.audioContent);
+            // Create audio
+            const [response] = await textToSpeechClient.synthesizeSpeech({
+              input: { text: translation },
+              voice: { languageCode: recordingData.targetLanguage },
+              audioConfig: { audioEncoding: 'MP3' },
+            });
+            socket.emit(OutgoingEvents.AUDIO_FILE, response.audioContent);
+          } catch (error) {
+            logger.error(error);
+          }
         }
       });
   });
