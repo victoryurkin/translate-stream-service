@@ -6,7 +6,7 @@ spec:
   template:
     spec:
       containers:
-        - image: us-east4-docker.pkg.dev/translate-voice-392913/services/translate-stream-service:1.0.12
+        - image: us-east4-docker.pkg.dev/translate-voice-392913/services/translate-stream-service:1.0.17
           ports:
             - containerPort: 8000
           env:

@@ -74,6 +74,7 @@ io.use(async (socket, next) => {
     logger.info(`Connected user: ${uid}`);
     next();
   } catch (error) {
+    logger.info('UNAUTHORIZED');
     next(new Error('UNAUTHORIZED'));
   }
 });
